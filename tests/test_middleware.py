@@ -33,6 +33,7 @@ class TestMiddleware(AioHTTPTestCase):
         ])
         self.app.router.add_post("/resource", TestMiddleware.post_handler)
         self.app.router.add_get("/resource", TestMiddleware.get_handler)
+        self.app.router.add_get("/resource/{id}/v2", TestMiddleware.get_handler)
         return self.app
 
     @staticmethod
@@ -53,7 +54,7 @@ class TestMiddleware(AioHTTPTestCase):
         self.assertEqual(await response.json(), input_data)
 
     @unittest_run_loop
-    async def test_handlers_are_created_once_per_endpoint(self):
+    async def test_handlers_are_created_once_per_resource(self):
         input_data = {'name': 'test_post', 'value': 'banana'}
         input_params = [('1', 'A'), ('1', 'a'), ('2', 'b')]
         with patch.object(self.argantic, '_create_handler',
@@ -64,4 +65,6 @@ class TestMiddleware(AioHTTPTestCase):
                 self.assertEqual(input_data, await response.json())
                 response = await self.client.get('/resource', params=input_params)
                 self.assertEqual(list_of_pairs_to_dict_of_lists(input_params), await response.json())
-                self.assertEqual(2, patched_create_handler.call_count)
+                response = await self.client.get(f'/resource/{i}/v2', params=input_params)
+                self.assertEqual(list_of_pairs_to_dict_of_lists(input_params), await response.json())
+                self.assertEqual(3, patched_create_handler.call_count)
