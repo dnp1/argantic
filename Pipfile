@@ -5,9 +5,10 @@ name = "pypi"
 
 [packages]
 aiohttp = ">=3,<4"
-coverage = "*"
+pydantic = "==0.14"
 
 [dev-packages]
+coverage = "==4.5.1"
 
 [requires]
 python_version = "3.7"
