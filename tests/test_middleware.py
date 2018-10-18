@@ -44,8 +44,10 @@ class TestMiddleware(AioHTTPTestCase):
         self.app.router.add_post("/resource-dict-tp", TestMiddleware.post_handler_with_dict_typing_argument)
         self.app.router.add_post("/resource-not-annotated", TestMiddleware.post_handler_without_annotation_argument)
         self.app.router.add_post("/resource-any", TestMiddleware.post_handler_with_any_argument)
-        self.app.router.add_post("/resource-pydantic", TestMiddleware.post_handler_with_pydantic_model)
+        self.app.router.add_post("/resource-pydantic", TestMiddleware.handler_with_pydantic_model)
 
+        # using same handler as post
+        self.app.router.add_get("/resource-pydantic", TestMiddleware.handler_with_pydantic_model)
         self.app.router.add_get("/resource", TestMiddleware.get_handler)
         self.app.router.add_get("/resource/{id}/v2/{id_}", TestMiddleware.get_handler)
         return self.app
@@ -78,7 +80,7 @@ class TestMiddleware(AioHTTPTestCase):
         return web.json_response(data=data)
 
     @staticmethod
-    async def post_handler_with_pydantic_model(request: web.Request, data: Model ):
+    async def handler_with_pydantic_model(request: web.Request, data: Model):
         return web.json_response(body=data.json())
 
     @unittest_run_loop
@@ -103,7 +105,6 @@ class TestMiddleware(AioHTTPTestCase):
                 self.assertEqual(list_of_pairs_to_dict_of_lists(input_params), await response.json())
                 self.assertEqual(3, patched_create_handler.call_count)
 
-
     @unittest_run_loop
     async def test_handler_with_dict_argument_are_automatically(self):
         input_data = {'name': 'test_post', 'value': 'banana', 'vid': 1, 'URV': 1.001, 'BRL': 18.23345}
@@ -120,7 +121,24 @@ class TestMiddleware(AioHTTPTestCase):
         self.assertEqual(await response.json(), input_data)
 
     @unittest_run_loop
-    async def test_handler_with_pydantic_model_are_properly_parsed(self):
+    async def test_handler_with_pydantic_model_are_properly_parsed_at_post(self):
         input_data = {'given_name': 'sardinha', 'family_name': 'pereira', 'age': 123, 'preferences': []}
         response = await self.client.post('/resource-pydantic', json=input_data)
         self.assertEqual(await response.json(), input_data)
+
+    @unittest_run_loop
+    async def test_handler_with_pydantic_model_are_properly_parsed_at_get(self):
+        input_data = [('given_name', 'sardinha'),
+                      ('family_name', 'pereira'),
+                      ('age', 123),
+                      ('preferences', '1'),
+                      ('preferences', '2')]
+
+        response = await self.client.get('/resource-pydantic', params=tuple((str(x), str(y)) for (x, y) in input_data))
+        response_data = await response.json()
+        self.assertEqual(list_of_pairs_to_dict_of_lists(input_data),
+                         {k: v if isinstance(v, list) else [v] for k, v in response_data.items()})
+
+    # missing test with route params, query params and body params merged
+
+    # missing test with get mixing route_params and query params

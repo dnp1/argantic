@@ -16,5 +16,5 @@ def multi_dict_to_dict(md: MultiMapping) -> Dict[Any, Union[Any, List[Any]]]:
         if len(value) > 1:
             d[key] = list(value)
         else:
-            d[key] = value
+            d[key] = value[0]
     return d

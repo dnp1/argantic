@@ -88,15 +88,6 @@ class Argantic:
             int: int,
         }
 
-    def _loads(self, content_type: str, raw: str) -> Any:
-        content_type = content_type or self.default_content_type
-        try:
-            mimetype_support = self.content_types[content_type]
-        except KeyError:
-            raise UnsupportedContentType()
-
-        return mimetype_support.loads(raw)
-
     def _get_handler_url_params(self, request: web.Request) -> Optional[Optional[Dict[str, int]]]:
         pattern = request.match_info.route.resource.get_info().get('pattern')
         if pattern:
