@@ -2,9 +2,11 @@ import asyncio
 import enum
 import inspect
 import json
+from dataclasses import is_dataclass
 from typing import Dict, Callable, Awaitable, Optional, Tuple, NamedTuple, Union, Any, Iterator, Coroutine
 
 from aiohttp import web
+from attr import dataclass
 from pydantic import BaseModel
 
 from argantic._util import multi_dict_to_dict
@@ -125,8 +127,11 @@ class Argantic:
         if any([annotation == parameter.empty, annotation == Any]):
             return identity
 
-        if inspect.isclass(annotation) and issubclass(annotation, BaseModel):
-            return asyncio.coroutine(annotation.parse_obj)
+        if inspect.isclass(annotation):
+            if issubclass(annotation, BaseModel):
+                return asyncio.coroutine(annotation.parse_obj)
+            elif is_dataclass(annotation):
+                return asyncio.coroutine(lambda d: annotation(**d))
 
         return identity
 
@@ -167,3 +172,33 @@ class Argantic:
             return await argantic_handler(request)
 
         return argantic_middleware
+
+
+@dataclass
+class A:
+    a: int
+    b: int
+
+
+#
+# class animal:
+#     B: int = 2
+#
+#
+# class mamifero:
+#     A: int = 1
+#
+#
+# T = TypeVar('T')
+#
+#
+# def a(t: Type[T]) -> Type[T]:
+#     class CT(mamifero, t):
+#         pass
+#
+#     return CT
+#
+#
+# v = a(animal)
+#
+# v.B

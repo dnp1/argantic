@@ -1,12 +1,14 @@
 import random
+from collections import defaultdict
 from typing import Dict, List, Any, Tuple
-from unittest.mock import patch, Mock, call
+from unittest.mock import patch, Mock
 
 from aiohttp import web
 from aiohttp.test_utils import AioHTTPTestCase, unittest_run_loop
+from dataclasses import asdict
 from multidict import MultiDictProxy
-from pydantic import BaseModel
-
+from pydantic import BaseModel, Decimal, EmailStr
+from pydantic.dataclasses import dataclass
 from argantic import Argantic
 
 
@@ -33,6 +35,13 @@ class Model(BaseModel):
     preferences: List[str]
 
 
+@dataclass
+class DataCls:
+    seller_email: EmailStr
+    product_name: str
+    price: Decimal
+
+
 class TestMiddleware(AioHTTPTestCase):
     async def get_application(self):
         self.argantic = Argantic()
@@ -44,10 +53,11 @@ class TestMiddleware(AioHTTPTestCase):
         self.app.router.add_post("/resource-dict-tp", TestMiddleware.post_handler_with_dict_typing_argument)
         self.app.router.add_post("/resource-not-annotated", TestMiddleware.post_handler_without_annotation_argument)
         self.app.router.add_post("/resource-any", TestMiddleware.post_handler_with_any_argument)
-        self.app.router.add_post("/resource-pydantic", TestMiddleware.handler_with_pydantic_model)
+        self.app.router.add_post("/resource-pydantic-model", TestMiddleware.handler_with_pydantic_model)
+        self.app.router.add_post("/resource-pydantic-dataclass", TestMiddleware.handler_with_pydantic_dataclass)
 
         # using same handler as post
-        self.app.router.add_get("/resource-pydantic", TestMiddleware.handler_with_pydantic_model)
+        self.app.router.add_get("/resource-pydantic-model", TestMiddleware.handler_with_pydantic_model)
         self.app.router.add_get("/resource", TestMiddleware.get_handler)
         self.app.router.add_get("/resource/{id}/v2/{id_}", TestMiddleware.get_handler)
         return self.app
@@ -64,24 +74,31 @@ class TestMiddleware(AioHTTPTestCase):
         return web.json_response(data=multi_dict_to_dict_of_lists(params))
 
     @staticmethod
-    async def post_handler_without_annotation_argument(request: web.Request, data):
+    async def post_handler_without_annotation_argument(_: web.Request, data):
         return web.json_response(data=data)
 
     @staticmethod
-    async def post_handler_with_any_argument(request: web.Request, data: Any):
+    async def post_handler_with_any_argument(_: web.Request, data: Any):
         return web.json_response(data=data)
 
     @staticmethod
-    async def post_handler_with_dict_argument(request: web.Request, data: dict) -> web.Response:
+    async def post_handler_with_dict_argument(_: web.Request, data: dict) -> web.Response:
         return web.json_response(data=data)
 
     @staticmethod
-    async def post_handler_with_dict_typing_argument(request: web.Request, data: Dict) -> web.Response:
+    async def post_handler_with_dict_typing_argument(_: web.Request, data: Dict) -> web.Response:
         return web.json_response(data=data)
 
     @staticmethod
-    async def handler_with_pydantic_model(request: web.Request, data: Model):
+    async def handler_with_pydantic_model(_: web.Request, data: Model):
         return web.json_response(body=data.json())
+
+    @staticmethod
+    async def handler_with_pydantic_dataclass(_: web.Request, data: DataCls):
+        encoders = defaultdict(lambda: lambda x: x)
+        encoders[Decimal] = float
+
+        return web.json_response(data={k: (encoders[type(v)])(v) for k, v in asdict(data).items()})
 
     @unittest_run_loop
     async def test_ordinary_handler_works_handler(self):
@@ -123,7 +140,13 @@ class TestMiddleware(AioHTTPTestCase):
     @unittest_run_loop
     async def test_handler_with_pydantic_model_are_properly_parsed_at_post(self):
         input_data = {'given_name': 'sardinha', 'family_name': 'pereira', 'age': 123, 'preferences': []}
-        response = await self.client.post('/resource-pydantic', json=input_data)
+        response = await self.client.post('/resource-pydantic-model', json=input_data)
+        self.assertEqual(await response.json(), input_data)
+
+    @unittest_run_loop
+    async def test_handler_with_pydantic_dataclass_are_properly_parsed_at_post(self):
+        input_data = {'seller_email': 'seller@sales.argantic', 'product_name': 'Cellphone', 'price': 17.6}
+        response = await self.client.post('/resource-pydantic-dataclass', json=input_data)
         self.assertEqual(await response.json(), input_data)
 
     @unittest_run_loop
@@ -134,7 +157,8 @@ class TestMiddleware(AioHTTPTestCase):
                       ('preferences', '1'),
                       ('preferences', '2')]
 
-        response = await self.client.get('/resource-pydantic', params=tuple((str(x), str(y)) for (x, y) in input_data))
+        response = await self.client.get('/resource-pydantic-model',
+                                         params=tuple((str(x), str(y)) for (x, y) in input_data))
         response_data = await response.json()
         self.assertEqual(list_of_pairs_to_dict_of_lists(input_data),
                          {k: v if isinstance(v, list) else [v] for k, v in response_data.items()})
