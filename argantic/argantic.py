@@ -1,64 +1,18 @@
 import asyncio
-import enum
 import inspect
 import json
 from dataclasses import is_dataclass
-from typing import Dict, Callable, Awaitable, Optional, Tuple, NamedTuple, Union, Any, Iterator, Coroutine
+from typing import Dict, Callable, Awaitable, Optional, Tuple, Any, Iterator, Coroutine
 
 from aiohttp import web
-from attr import dataclass
 from pydantic import BaseModel
 
-from argantic._util import multi_dict_to_dict
+from argantic._util import identity_coro
+from argantic.data_sources import DataSource
+from argantic.errors import  ArganticIncompatibleType
+from argantic.loaders import FormatSupport, AbstractLoader, QueryParamsLoader, RouteParamsLoader, BodyLoader
 
 WebHandler = Callable[..., Awaitable[web.Response]]
-
-from abc import ABCMeta, abstractmethod
-
-
-class FormatSupport(NamedTuple):
-    mime_type: str
-    dumps: Callable[[object], str]
-    loads: Callable[[Union[str, bytes, bytearray]], object]
-
-
-class AbstractLoader(metaclass=ABCMeta):
-    @abstractmethod
-    async def loads(self, request: web.Request):
-        pass
-
-
-class QueryParamsLoader(AbstractLoader):
-    async def loads(self, request: web.Request):
-        return multi_dict_to_dict(request.query)
-
-
-class RouteParamsLoader(AbstractLoader):
-    async def loads(self, request: web.Request):
-        return dict(request.match_info)
-
-
-class BodyLoader(AbstractLoader):
-    def __init__(self, content_types: Dict[str, FormatSupport]):
-        self.content_types = content_types
-
-    async def loads(self, request: web.Request):
-        raw = await request.text()
-        try:
-            mimetype_support = self.content_types[request.content_type]
-            return mimetype_support.loads(raw)
-        except KeyError:
-            raise UnsupportedContentType()
-
-
-class DataSource(enum.Enum):
-    RouteParams = enum.auto()
-    QueryParams = enum.auto()
-    Body = enum.auto()
-
-
-class UnsupportedContentType(Exception):
-    pass
 
 
 class Argantic:
@@ -90,11 +44,6 @@ class Argantic:
             int: int,
         }
 
-    def _get_handler_url_params(self, request: web.Request) -> Optional[Optional[Dict[str, int]]]:
-        pattern = request.match_info.route.resource.get_info().get('pattern')
-        if pattern:
-            return pattern.groupindex
-
     def _get_handler_parameter(self, handler) -> Optional[inspect.Parameter]:
         inspect_parameters: Iterator[inspect.Parameter] = iter(inspect.signature(handler).parameters.values())
 
@@ -110,10 +59,11 @@ class Argantic:
 
         return parameters[0]
 
-    def _resolve_data_loaders(self, request) -> Tuple[Callable[[web.Request], Coroutine], ...]:
-        data_sourcres = self._data_source_orders[request.method.upper()]
+    def _resolve_data_loaders(self, request: web.Request) -> Tuple[
+        Tuple[DataSource, Callable[[web.Request], Coroutine]], ...]:
+        data_sources = self._data_source_orders[request.method.upper()]
 
-        return tuple(self._loaders[ds].loads for ds in data_sourcres)
+        return tuple((ds, self._loaders[ds].loads) for ds in data_sources)
 
     def _get_data_parser(self, handler: WebHandler):
         parameter = self._get_handler_parameter(handler)
@@ -122,10 +72,8 @@ class Argantic:
 
         annotation = parameter.annotation
 
-        identity = asyncio.coroutine(lambda x: x)
-
         if any([annotation == parameter.empty, annotation == Any]):
-            return identity
+            return identity_coro
 
         if inspect.isclass(annotation):
             if issubclass(annotation, BaseModel):
@@ -133,18 +81,25 @@ class Argantic:
             elif is_dataclass(annotation):
                 return asyncio.coroutine(lambda d: annotation(**d))
 
-        return identity
+        annotation = getattr(annotation, '__origin__', annotation)
+
+        async def check(data):
+            if type(data) != annotation:
+                raise ArganticIncompatibleType()
+            return data
+
+        return check
 
     def _create_handler(self, handler: WebHandler, request: web.Request):
         parser = self._get_data_parser(handler)
         if not parser:
             return handler
 
-        data_retrievers = self._resolve_data_loaders(request)
+        data_loaders = self._resolve_data_loaders(request)
 
         async def n_handler(request_: web.Request):
             data = {}
-            for loader in data_retrievers:
+            for ds, loader in data_loaders:
                 data.update(await loader(request))
 
             data = await parser(data)
@@ -172,33 +127,3 @@ class Argantic:
             return await argantic_handler(request)
 
         return argantic_middleware
-
-
-@dataclass
-class A:
-    a: int
-    b: int
-
-
-#
-# class animal:
-#     B: int = 2
-#
-#
-# class mamifero:
-#     A: int = 1
-#
-#
-# T = TypeVar('T')
-#
-#
-# def a(t: Type[T]) -> Type[T]:
-#     class CT(mamifero, t):
-#         pass
-#
-#     return CT
-#
-#
-# v = a(animal)
-#
-# v.B

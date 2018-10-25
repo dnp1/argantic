@@ -18,3 +18,7 @@ def multi_dict_to_dict(md: MultiMapping) -> Dict[Any, Union[Any, List[Any]]]:
         else:
             d[key] = value[0]
     return d
+
+
+async def identity_coro(x):
+    return x
