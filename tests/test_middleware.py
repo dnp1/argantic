@@ -54,10 +54,12 @@ class TestMiddleware(AioHTTPTestCase):
         self.app.router.add_post("/resource-not-annotated", TestMiddleware.post_handler_without_annotation_argument)
         self.app.router.add_post("/resource-any", TestMiddleware.post_handler_with_any_argument)
         self.app.router.add_post("/resource-pydantic-model", TestMiddleware.handler_with_pydantic_model)
+        self.app.router.add_post("/{age}/resource-pydantic-model", TestMiddleware.handler_with_pydantic_model)
         self.app.router.add_post("/resource-pydantic-dataclass", TestMiddleware.handler_with_pydantic_dataclass)
 
         # using same handler as post
         self.app.router.add_get("/resource-pydantic-model", TestMiddleware.handler_with_pydantic_model)
+        self.app.router.add_get("/{age}/resource-pydantic-model", TestMiddleware.handler_with_pydantic_model)
         self.app.router.add_get("/resource", TestMiddleware.get_handler)
         self.app.router.add_get("/resource/{id}/v2/{id_}", TestMiddleware.get_handler)
         return self.app
@@ -139,6 +141,22 @@ class TestMiddleware(AioHTTPTestCase):
 
     @unittest_run_loop
     async def test_handler_with_pydantic_model_are_properly_parsed_at_post(self):
+        input_data = {'given_name': 'sardinha', 'family_name': 'pereira',
+                      'age': 111,
+                      'preferences': ['asa', '2321', '234']}
+
+        body_data = {'preferences': input_data['preferences']}
+
+        response = await self.client.post(f'/{input_data["age"]}/resource-pydantic-model',
+                                          json=body_data,
+                                          params={'given_name': input_data['given_name'],
+                                                  'family_name': input_data['family_name'],
+                                                  }
+                                          )
+        self.assertEqual(await response.json(), input_data)
+
+    @unittest_run_loop
+    async def test_handler_with_pydantic_model_are_properly_parsed_from_body_at_post(self):
         input_data = {'given_name': 'sardinha', 'family_name': 'pereira', 'age': 123, 'preferences': []}
         response = await self.client.post('/resource-pydantic-model', json=input_data)
         self.assertEqual(await response.json(), input_data)
@@ -150,7 +168,7 @@ class TestMiddleware(AioHTTPTestCase):
         self.assertEqual(await response.json(), input_data)
 
     @unittest_run_loop
-    async def test_handler_with_pydantic_model_are_properly_parsed_at_get(self):
+    async def test_handler_with_pydantic_model_are_properly_parsed_from_query_params_at_get(self):
         input_data = [('given_name', 'sardinha'),
                       ('family_name', 'pereira'),
                       ('age', 123),
@@ -163,6 +181,19 @@ class TestMiddleware(AioHTTPTestCase):
         self.assertEqual(list_of_pairs_to_dict_of_lists(input_data),
                          {k: v if isinstance(v, list) else [v] for k, v in response_data.items()})
 
-    # missing test with route params, query params and body params merged
 
-    # missing test with get mixing route_params and query params
+    @unittest_run_loop
+    async def test_handler_with_pydantic_model_are_properly_parsed_at_get(self):
+        input_data = [('given_name', 'sardinha'),
+                      ('family_name', 'pereira'),
+                      ('preferences', '1'),
+                      ('preferences', '2')]
+
+        response = await self.client.get('/132/resource-pydantic-model',
+                                         params=tuple((str(x), str(y)) for (x, y) in input_data))
+        response_data = await response.json()
+        expectation = list_of_pairs_to_dict_of_lists(input_data)
+        expectation['age'] = [132]
+
+        self.assertEqual(expectation,
+                         {k: v if isinstance(v, list) else [v] for k, v in response_data.items()})
