@@ -1,3 +1,6 @@
+from typing import Union
+
+
 class ArganticError(Exception):
     pass
 
@@ -20,3 +23,8 @@ class ArganticIncompatibleType(ArganticClientError):
 
 class ArganticUnsupportedClassAnnotated(ArganticServerError):
     pass
+
+
+class ArganticValidationError(ArganticClientError):
+    def __init__(self, report: Union[dict, list]):
+        self.report = report

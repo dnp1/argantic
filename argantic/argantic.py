@@ -1,16 +1,18 @@
-import asyncio
 import inspect
 import json
 from dataclasses import is_dataclass
 from typing import Dict, Callable, Awaitable, Optional, Tuple, Any, Iterator, Coroutine
 
 from aiohttp import web
+from aiohttp.hdrs import ACCEPT
+from aiohttp.web_exceptions import HTTPUnprocessableEntity, HTTPNotAcceptable
 from pydantic import BaseModel
 
 from argantic._util import identity_coro
 from argantic.data_sources import DataSource
-from argantic.errors import  ArganticIncompatibleType
+from argantic.errors import ArganticValidationError
 from argantic.loaders import FormatSupport, AbstractLoader, QueryParamsLoader, RouteParamsLoader, BodyLoader
+from argantic.parsers import parse_ordinary_type_factory, parse_dataclass_factory, parse_model_factory
 
 WebHandler = Callable[..., Awaitable[web.Response]]
 
@@ -77,18 +79,13 @@ class Argantic:
 
         if inspect.isclass(annotation):
             if issubclass(annotation, BaseModel):
-                return asyncio.coroutine(annotation.parse_obj)
+                return parse_model_factory(annotation)
             elif is_dataclass(annotation):
-                return asyncio.coroutine(lambda d: annotation(**d))
+                return parse_dataclass_factory(annotation)
 
         annotation = getattr(annotation, '__origin__', annotation)
 
-        async def check(data):
-            if type(data) != annotation:
-                raise ArganticIncompatibleType()
-            return data
-
-        return check
+        return parse_ordinary_type_factory(annotation)
 
     def _create_handler(self, handler: WebHandler, request: web.Request):
         parser = self._get_data_parser(handler)
@@ -101,12 +98,56 @@ class Argantic:
             data = {}
             for ds, loader in data_loaders:
                 data.update(await loader(request))
-
-            data = await parser(data)
+            try:
+                data = await parser(data)
+            except ArganticValidationError as e:
+                raw, content_type = self._create_raw_response_body(request, e.report)
+                raise HTTPUnprocessableEntity(text=raw, content_type=content_type)
 
             return await handler(request_, data)
 
         return n_handler
+
+    def _get_response_content_type(self, request: web.Request) -> str:
+        response_content_type = request.content_type or self.default_content_type
+
+        accept_header: str = request.headers.get(ACCEPT)
+        if accept_header:
+            accept_mime = None
+            accept_parts = accept_header.split(';')
+            accept_mimes = accept_parts[0].split(',')
+            for mime in accept_mimes:
+                mime = mime.strip()
+                if mime in self.content_types:
+                    accept_mime = mime.strip()
+                    break
+            if accept_mime is not None:
+                response_content_type = accept_mime
+            elif '*/*' not in accept_header:
+                raise HTTPNotAcceptable()
+        return response_content_type
+
+    def _create_raw_response_body(self, request: web.Request, data) -> (str, str):
+        response_content_type = request.content_type or self.default_content_type
+
+        accept_header: str = request.headers.get(ACCEPT)
+        if accept_header:
+            accept_mime = None
+            accept_parts = accept_header.split(';')
+            accept_mimes = accept_parts[0].split(',')
+            for mime in accept_mimes:
+                mime = mime.strip()
+                if mime in self.content_types:
+                    accept_mime = mime.strip()
+                    break
+            if accept_mime is not None:
+                response_content_type = accept_mime
+            elif '*/*' not in accept_header:
+                raise HTTPNotAcceptable()
+
+        if 'application/octet-stream' == response_content_type or '*/*' in response_content_type:
+            response_content_type = self.default_content_type
+        return self.content_types[response_content_type].dumps(data), response_content_type
 
     def _get_argantic_handler(self, handler: WebHandler, request: web.Request) -> WebHandler:
         handler_key = self._get_handler_identifier(handler, request)

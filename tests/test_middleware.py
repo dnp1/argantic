@@ -1,4 +1,5 @@
 import random
+from http import HTTPStatus
 from unittest.mock import patch
 
 from aiohttp import web
@@ -125,3 +126,17 @@ class TestMiddleware(AioHTTPTestCase):
 
         self.assertEqual(expectation,
                          {k: v if isinstance(v, list) else [v] for k, v in response_data.items()})
+
+    @unittest_run_loop
+    async def test_handler_with_pydantic_model_are_properly_validated_at_get(self):
+        input_data = [('given_name', 'sardinha'),
+                      ('preferences', '1'),
+                      ('preferences', '2')]
+
+        response = await self.client.get('/132/resource-pydantic-model',
+                                         params=tuple((str(x), str(y)) for (x, y) in input_data))
+
+        self.assertEqual(response.status, HTTPStatus.UNPROCESSABLE_ENTITY)
+        response_data = await response.json()
+        expectation = list_of_pairs_to_dict_of_lists(input_data)
+        expectation['age'] = [132]
