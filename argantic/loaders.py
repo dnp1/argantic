@@ -33,6 +33,7 @@ class RouteParamsLoader(AbstractLoader):
 
 class BodyLoader(AbstractLoader):
     can_return_list = True
+
     def __init__(self, content_types: Dict[str, FormatSupport]):
         self.content_types = content_types
 
