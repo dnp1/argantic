@@ -1,11 +1,11 @@
-from typing import Type, Callable, Dict
+from typing import Type
 
 from pydantic import BaseModel, ValidationError
 
 from argantic.errors import ArganticValidationError
 
 
-def parse_model_factory(model: BaseModel):
+def parse_model_factory(model: Type[BaseModel]):
     async def parse(data: dict):
         try:
             return model.parse_obj(data)

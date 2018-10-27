@@ -1,9 +1,9 @@
 from abc import ABCMeta, abstractmethod
-from typing import NamedTuple, Callable, Union, Dict
+from typing import NamedTuple, Callable, Union, Dict, Type, List
 
 from aiohttp import web
 
-from argantic._util import multi_dict_to_dict
+from argantic.util import multi_dict_to_dict
 from argantic.errors import ArganticUnsupportedContentType
 
 
@@ -14,6 +14,8 @@ class FormatSupport(NamedTuple):
 
 
 class AbstractLoader(metaclass=ABCMeta):
+    can_return_list = False
+
     @abstractmethod
     async def loads(self, request: web.Request):
         pass
@@ -30,6 +32,7 @@ class RouteParamsLoader(AbstractLoader):
 
 
 class BodyLoader(AbstractLoader):
+    can_return_list = True
     def __init__(self, content_types: Dict[str, FormatSupport]):
         self.content_types = content_types
 
@@ -41,3 +44,6 @@ class BodyLoader(AbstractLoader):
         except KeyError as e:
             raise ArganticUnsupportedContentType() from e
 
+
+DATA_SOURCE = Type[AbstractLoader]
+DATA = Union[List, Dict]

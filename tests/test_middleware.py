@@ -55,7 +55,7 @@ class TestMiddleware(AioHTTPTestCase):
                 self.assertEqual(3, patched_create_handler.call_count)
 
     @unittest_run_loop
-    async def test_handler_with_dict_argument_are_automatically(self):
+    async def test_handler_with_dict_argument_are_properly_loaded(self):
         input_data = {'name': 'test_post', 'value': 'banana', 'vid': 1, 'URV': 1.001, 'BRL': 18.23345}
         response = await self.client.post('/resource-dict', json=input_data)
         self.assertEqual(await response.json(), input_data)
@@ -137,6 +137,27 @@ class TestMiddleware(AioHTTPTestCase):
                                          params=tuple((str(x), str(y)) for (x, y) in input_data))
 
         self.assertEqual(response.status, HTTPStatus.UNPROCESSABLE_ENTITY)
-        response_data = await response.json()
-        expectation = list_of_pairs_to_dict_of_lists(input_data)
-        expectation['age'] = [132]
+
+    @unittest_run_loop
+    async def test_handler_with_pydantic_model_are_properly_validated_at_post(self):
+        input_data = {'given_name': 'sardinha', 'family_name': ['pereira'], 'preferences': []}
+        response = await self.client.post('/resource-pydantic-model', json=input_data)
+        self.assertEqual(response.status, HTTPStatus.UNPROCESSABLE_ENTITY)
+
+    @unittest_run_loop
+    async def test_handler_with_pydantic_dataclass_are_properly_validated_at_post_when_invalid_types(self):
+        input_data = {'seller_email': 'seller@sales.argantic', 'product_name': ['Cellphone'], 'price': 'deafdasfdsa'}
+        response = await self.client.post('/resource-pydantic-dataclass', json=input_data)
+        self.assertEqual(response.status, HTTPStatus.UNPROCESSABLE_ENTITY)
+
+    @unittest_run_loop
+    async def test_handler_with_pydantic_dataclass_are_properly_validated_at_post_when_missing_keys(self):
+        input_data = {'seller_email': 'seller@sales.argantic', 'product_name': ['Cellphone']}
+        response = await self.client.post('/resource-pydantic-dataclass', json=input_data)
+        self.assertEqual(response.status, HTTPStatus.UNPROCESSABLE_ENTITY)
+
+    @unittest_run_loop
+    async def test_handler_with_dict_are_properly_validated_at_post(self):
+        input_data = {'seller_email': 'seller@sales.argantic', 'product_name': 'Cellphone', 'price': 'deafdasfdsa'}
+        response = await self.client.post('/resource-dict-tp', json=[input_data])
+        self.assertEqual(response.status, HTTPStatus.UNPROCESSABLE_ENTITY)

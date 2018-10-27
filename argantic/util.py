@@ -22,3 +22,14 @@ def multi_dict_to_dict(md: MultiMapping) -> Dict[Any, Union[Any, List[Any]]]:
 
 async def identity_coro(x):
     return x
+
+
+def update_all(list_data: list, replace_data: dict, override=True):
+    for item in list_data:
+        if type(item) != dict:
+            continue
+        if override:
+            item.update(replace_data)
+        else:
+            for key in replace_data.keys():
+                item[key] = item.get(key, replace_data[key])

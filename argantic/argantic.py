@@ -1,15 +1,14 @@
 import inspect
 import json
 from dataclasses import is_dataclass
-from typing import Dict, Callable, Awaitable, Optional, Tuple, Any, Iterator, Coroutine
+from typing import Dict, Callable, Awaitable, Optional, Tuple, Any, Iterator, Coroutine, Type
 
 from aiohttp import web
 from aiohttp.hdrs import ACCEPT
-from aiohttp.web_exceptions import HTTPUnprocessableEntity, HTTPNotAcceptable
+from aiohttp.web_exceptions import HTTPUnprocessableEntity, HTTPNotAcceptable, HTTPClientError
 from pydantic import BaseModel
 
-from argantic._util import identity_coro
-from argantic.data_sources import DataSource
+from argantic.util import identity_coro, update_all
 from argantic.errors import ArganticValidationError
 from argantic.loaders import FormatSupport, AbstractLoader, QueryParamsLoader, RouteParamsLoader, BodyLoader
 from argantic.parsers import parse_ordinary_type_factory, parse_dataclass_factory, parse_model_factory
@@ -18,6 +17,7 @@ WebHandler = Callable[..., Awaitable[web.Response]]
 
 
 class Argantic:
+
     def __init__(self):
         self._computed_handler: Dict[(int, str), WebHandler] = {}
 
@@ -26,19 +26,21 @@ class Argantic:
                                               dumps=json.dumps,
                                               loads=json.loads)
         }
-        self.default_content_type = 'application/json'
-        self._data_source_orders: Dict[str, Tuple[DataSource, ...]] = {
-            'GET': (DataSource.QueryParams, DataSource.RouteParams),
-            'POST': (DataSource.QueryParams, DataSource.Body, DataSource.RouteParams),
-            'PATCH': (DataSource.QueryParams, DataSource.Body, DataSource.RouteParams),
-            'PUT': (DataSource.QueryParams, DataSource.Body, DataSource.RouteParams),
-            'DELETE': (DataSource.QueryParams, DataSource.RouteParams),
-        }
 
-        self._loaders: Dict[DataSource, AbstractLoader] = {
-            DataSource.QueryParams: QueryParamsLoader(),
-            DataSource.RouteParams: RouteParamsLoader(),
-            DataSource.Body: BodyLoader(self.content_types)
+        query_params_loader = QueryParamsLoader()
+        route_params_loader = RouteParamsLoader()
+        body_loader = BodyLoader(self.content_types)
+
+        self._invalid_body_exception: Type[HTTPClientError] = HTTPUnprocessableEntity
+        self._unacceptable_request_exception: Type[HTTPClientError] = HTTPNotAcceptable
+
+        self.default_content_type = 'application/json'
+        self._data_loaders: Dict[str, Tuple[AbstractLoader, ...]] = {
+            'GET': (query_params_loader, route_params_loader),
+            'POST': (query_params_loader, body_loader, route_params_loader),
+            'PATCH': (query_params_loader, body_loader, route_params_loader),
+            'PUT': (query_params_loader, body_loader, route_params_loader),
+            'DELETE': (query_params_loader, route_params_loader),
         }
 
         self._type_parsers = {
@@ -61,11 +63,24 @@ class Argantic:
 
         return parameters[0]
 
-    def _resolve_data_loaders(self, request: web.Request) -> Tuple[
-        Tuple[DataSource, Callable[[web.Request], Coroutine]], ...]:
-        data_sources = self._data_source_orders[request.method.upper()]
+    def _resolve_data_loaders(self, request: web.Request) -> Tuple[Tuple, Callable[[web.Request], Coroutine]]:
+        data_loaders = self._data_loaders[request.method.upper()]
 
-        return tuple((ds, self._loaders[ds].loads) for ds in data_sources)
+        async def load(req: web.Request):
+            list_value = None
+            loaded_data = {}
+            for loader in data_loaders:
+                data = await loader.loads(req)
+                loaded_data[type(loader)] = data
+
+                if type(data) == list:
+                    list_value = type(loader)
+
+            return loaded_data, list_value
+
+        loaders_types = tuple(type(loader) for loader in data_loaders)
+
+        return loaders_types, load
 
     def _get_data_parser(self, handler: WebHandler):
         parameter = self._get_handler_parameter(handler)
@@ -92,40 +107,32 @@ class Argantic:
         if not parser:
             return handler
 
-        data_loaders = self._resolve_data_loaders(request)
+        data_loaders, loads_func = self._resolve_data_loaders(request)
 
         async def n_handler(request_: web.Request):
-            data = {}
-            for ds, loader in data_loaders:
-                data.update(await loader(request))
+            data_collection, list_key = await loads_func(request)
+            if list_key:
+                list_data = data_collection[list_key]
+                list_inx = data_loaders.index(list_key)
+                for inx, loader in enumerate(data_loaders):
+                    if inx != list_inx:
+                        update_all(list_data, data_collection[loader], override=inx > list_inx)
+                data = list_data
+
+            else:
+                data = {}
+                for loader in data_loaders:
+                    data.update(data_collection[loader])
+
             try:
                 data = await parser(data)
             except ArganticValidationError as e:
                 raw, content_type = self._create_raw_response_body(request, e.report)
-                raise HTTPUnprocessableEntity(text=raw, content_type=content_type)
+                raise self._invalid_body_exception(text=raw, content_type=content_type)
 
             return await handler(request_, data)
 
         return n_handler
-
-    def _get_response_content_type(self, request: web.Request) -> str:
-        response_content_type = request.content_type or self.default_content_type
-
-        accept_header: str = request.headers.get(ACCEPT)
-        if accept_header:
-            accept_mime = None
-            accept_parts = accept_header.split(';')
-            accept_mimes = accept_parts[0].split(',')
-            for mime in accept_mimes:
-                mime = mime.strip()
-                if mime in self.content_types:
-                    accept_mime = mime.strip()
-                    break
-            if accept_mime is not None:
-                response_content_type = accept_mime
-            elif '*/*' not in accept_header:
-                raise HTTPNotAcceptable()
-        return response_content_type
 
     def _create_raw_response_body(self, request: web.Request, data) -> (str, str):
         response_content_type = request.content_type or self.default_content_type
@@ -143,7 +150,7 @@ class Argantic:
             if accept_mime is not None:
                 response_content_type = accept_mime
             elif '*/*' not in accept_header:
-                raise HTTPNotAcceptable()
+                raise self._unacceptable_request_exception()
 
         if 'application/octet-stream' == response_content_type or '*/*' in response_content_type:
             response_content_type = self.default_content_type
