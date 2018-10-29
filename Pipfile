@@ -5,7 +5,9 @@ name = "pypi"
 
 [packages]
 aiohttp = ">=3,<4"
-pydantic = {extras = ["email"], version = "==0.14"}
+pydantic = "==0.14"
+#put email validator as pydantic extra after pipenv bugfix
+email-validator = '1.0.3'
 
 [dev-packages]
 coverage = "==4.5.1"
