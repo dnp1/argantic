@@ -1,13 +1,15 @@
 from abc import ABCMeta, abstractmethod
-from typing import NamedTuple, Callable, Union, Dict, Type, List
+from typing import Callable, Union, Dict, Type, List
 
 from aiohttp import web
+from attr import dataclass
 
 from argantic.util import multi_dict_to_dict
 from argantic.errors import ArganticUnsupportedContentType
 
 
-class FormatSupport(NamedTuple):
+@dataclass
+class FormatSupport:
     mime_type: str
     dumps: Callable[[object], str]
     loads: Callable[[Union[str, bytes, bytearray]], object]

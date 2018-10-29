@@ -3,6 +3,7 @@ from http import HTTPStatus
 from unittest.mock import patch
 
 from aiohttp import web
+from aiohttp.hdrs import CONTENT_TYPE, ACCEPT
 from aiohttp.test_utils import AioHTTPTestCase, unittest_run_loop
 from argantic import Argantic
 from tests.aiohttp_handlers import post_handler, pure_handler, handler_with_pydantic_model, \
@@ -136,28 +137,59 @@ class TestMiddleware(AioHTTPTestCase):
         response = await self.client.get('/132/resource-pydantic-model',
                                          params=tuple((str(x), str(y)) for (x, y) in input_data))
 
-        self.assertEqual(response.status, HTTPStatus.UNPROCESSABLE_ENTITY)
+        self.assertEqual(HTTPStatus.UNPROCESSABLE_ENTITY, response.status)
 
     @unittest_run_loop
     async def test_handler_with_pydantic_model_are_properly_validated_at_post(self):
         input_data = {'given_name': 'sardinha', 'family_name': ['pereira'], 'preferences': []}
         response = await self.client.post('/resource-pydantic-model', json=input_data)
-        self.assertEqual(response.status, HTTPStatus.UNPROCESSABLE_ENTITY)
+        self.assertEqual(HTTPStatus.UNPROCESSABLE_ENTITY, response.status)
 
     @unittest_run_loop
     async def test_handler_with_pydantic_dataclass_are_properly_validated_at_post_when_invalid_types(self):
         input_data = {'seller_email': 'seller@sales.argantic', 'product_name': ['Cellphone'], 'price': 'deafdasfdsa'}
         response = await self.client.post('/resource-pydantic-dataclass', json=input_data)
-        self.assertEqual(response.status, HTTPStatus.UNPROCESSABLE_ENTITY)
+        self.assertEqual(HTTPStatus.UNPROCESSABLE_ENTITY, response.status)
 
     @unittest_run_loop
     async def test_handler_with_pydantic_dataclass_are_properly_validated_at_post_when_missing_keys(self):
         input_data = {'seller_email': 'seller@sales.argantic', 'product_name': ['Cellphone']}
         response = await self.client.post('/resource-pydantic-dataclass', json=input_data)
-        self.assertEqual(response.status, HTTPStatus.UNPROCESSABLE_ENTITY)
+        self.assertEqual(HTTPStatus.UNPROCESSABLE_ENTITY, response.status)
 
     @unittest_run_loop
     async def test_handler_with_dict_are_properly_validated_at_post(self):
         input_data = {'seller_email': 'seller@sales.argantic', 'product_name': 'Cellphone', 'price': 'deafdasfdsa'}
         response = await self.client.post('/resource-dict-tp', json=[input_data])
-        self.assertEqual(response.status, HTTPStatus.UNPROCESSABLE_ENTITY)
+        self.assertEqual(HTTPStatus.UNPROCESSABLE_ENTITY, response.status)
+
+    @unittest_run_loop
+    async def test_request_with_invalid_content_type(self):
+        input_data = {'seller_email': 'seller@sales.argantic', 'product_name': 'Cellphone', 'price': 'deafdasfdsa'}
+        response = await self.client.post('/resource-dict-tp',
+                                          headers={CONTENT_TYPE: 'application/toml'},
+                                          data='dasfsafniuqwf')
+        self.assertEqual(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, response.status)
+
+    @unittest_run_loop
+    async def test_request_with_invalid_accept_header(self):
+        input_data = {'seller_email': 'seller@sales.argantic', 'product_name': 'Cellphone', 'price': 'deafdasfdsa'}
+        response = await self.client.post('/resource-pydantic-dataclass',
+                                          headers={ACCEPT: 'application/toml', CONTENT_TYPE: 'application/json'},
+                                          json=input_data)
+        self.assertEqual(HTTPStatus.NOT_ACCEPTABLE, response.status)
+
+    @unittest_run_loop
+    async def test_request_with_valid_explicit_accept_header_any(self):
+        response = await self.client.post('/resource-pydantic-dataclass',
+                                          headers={ACCEPT: '*/*', CONTENT_TYPE: 'application/json'},
+                                          json={'teste': 1})
+        self.assertEqual(HTTPStatus.UNPROCESSABLE_ENTITY, response.status)
+
+    @unittest_run_loop
+    async def test_request_with_valid_explicit_accept_header_json(self):
+        response = await self.client.post('/resource-pydantic-dataclass',
+                                          headers={ACCEPT: 'application/toml, application/json',
+                                                   CONTENT_TYPE: 'application/json'},
+                                          json={'teste': 1})
+        self.assertEqual(HTTPStatus.UNPROCESSABLE_ENTITY, response.status)

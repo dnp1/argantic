@@ -1,15 +1,15 @@
 import inspect
 import json
 from dataclasses import is_dataclass
-from typing import Dict, Callable, Awaitable, Optional, Tuple, Any, Iterator, Coroutine, Type
+from typing import Dict, Callable, Awaitable, Optional, Tuple, Any, Iterator, Coroutine, Type, List
 
 from aiohttp import web
 from aiohttp.hdrs import ACCEPT
-from aiohttp.web_exceptions import HTTPUnprocessableEntity, HTTPNotAcceptable, HTTPClientError
+from aiohttp.web_exceptions import HTTPUnprocessableEntity, HTTPNotAcceptable, HTTPClientError, HTTPUnsupportedMediaType
 from pydantic import BaseModel
 
 from argantic.util import identity_coro, update_all
-from argantic.errors import ArganticValidationError
+from argantic.errors import ArganticValidationError, ArganticUnsupportedContentType
 from argantic.loaders import FormatSupport, AbstractLoader, QueryParamsLoader, RouteParamsLoader, BodyLoader
 from argantic.parsers import parse_ordinary_type_factory, parse_dataclass_factory, parse_model_factory
 
@@ -18,8 +18,15 @@ WebHandler = Callable[..., Awaitable[web.Response]]
 
 class Argantic:
 
-    def __init__(self):
+    def __init__(self,
+                 skip_handlers: Optional[List[WebHandler]] = None,
+                 apply_params_every_item: bool = True):
+
+        self._apply_params_every_item = apply_params_every_item
+
         self._computed_handler: Dict[(int, str), WebHandler] = {}
+        if skip_handlers:
+            self._computed_handler.update({h: h for h in skip_handlers})
 
         self.content_types = {
             'application/json': FormatSupport(mime_type='application/json',
@@ -32,7 +39,8 @@ class Argantic:
         body_loader = BodyLoader(self.content_types)
 
         self._invalid_body_exception: Type[HTTPClientError] = HTTPUnprocessableEntity
-        self._unacceptable_request_exception: Type[HTTPClientError] = HTTPNotAcceptable
+        self._unsupported_media_type_exception: Type[HTTPClientError] = HTTPUnsupportedMediaType
+        self._not_acceptable_request_exception: Type[HTTPClientError] = HTTPNotAcceptable
 
         self.default_content_type = 'application/json'
         self._data_loaders: Dict[str, Tuple[AbstractLoader, ...]] = {
@@ -65,22 +73,32 @@ class Argantic:
 
     def _resolve_data_loaders(self, request: web.Request) -> Tuple[Tuple, Callable[[web.Request], Coroutine]]:
         data_loaders = self._data_loaders[request.method.upper()]
-
-        async def load(req: web.Request):
-            list_value = None
-            loaded_data = {}
-            for loader in data_loaders:
-                data = await loader.loads(req)
-                loaded_data[type(loader)] = data
-
-                if type(data) == list:
-                    list_value = type(loader)
-
-            return loaded_data, list_value
-
         loaders_types = tuple(type(loader) for loader in data_loaders)
 
-        return loaders_types, load
+        can_have_list = any(loader.can_return_list for loader in data_loaders)
+
+        if can_have_list and self._apply_params_every_item:
+
+            async def load(req: web.Request):
+                list_value = None
+                loaded_data = {}
+                for loader in data_loaders:
+                    data = await loader.loads(req)
+                    loaded_data[type(loader)] = data
+
+                    if type(data) == list:
+                        list_value = type(loader)
+
+                return loaded_data, list_value
+
+            return loaders_types, load
+        else:
+            async def load(req: web.Request):
+                return {
+                           type(loader): await loader.loads(req) for loader in data_loaders
+                       }, False
+
+            return loaders_types, load
 
     def _get_data_parser(self, handler: WebHandler):
         parameter = self._get_handler_parameter(handler)
@@ -89,7 +107,7 @@ class Argantic:
 
         annotation = parameter.annotation
 
-        if any([annotation == parameter.empty, annotation == Any]):
+        if annotation == parameter.empty or annotation == Any:
             return identity_coro
 
         if inspect.isclass(annotation):
@@ -110,7 +128,11 @@ class Argantic:
         data_loaders, loads_func = self._resolve_data_loaders(request)
 
         async def n_handler(request_: web.Request):
-            data_collection, list_key = await loads_func(request)
+            try:
+                data_collection, list_key = await loads_func(request)
+            except ArganticUnsupportedContentType as e:
+                raise self._unsupported_media_type_exception from e
+
             if list_key:
                 list_data = data_collection[list_key]
                 list_inx = data_loaders.index(list_key)
@@ -128,7 +150,7 @@ class Argantic:
                 data = await parser(data)
             except ArganticValidationError as e:
                 raw, content_type = self._create_raw_response_body(request, e.report)
-                raise self._invalid_body_exception(text=raw, content_type=content_type)
+                raise self._invalid_body_exception(text=raw, content_type=content_type) from e
 
             return await handler(request_, data)
 
@@ -150,7 +172,7 @@ class Argantic:
             if accept_mime is not None:
                 response_content_type = accept_mime
             elif '*/*' not in accept_header:
-                raise self._unacceptable_request_exception()
+                raise self._not_acceptable_request_exception()
 
         if 'application/octet-stream' == response_content_type or '*/*' in response_content_type:
             response_content_type = self.default_content_type
