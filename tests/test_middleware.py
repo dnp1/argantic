@@ -53,7 +53,7 @@ class TestMiddleware(AioHTTPTestCase):
                 self.assertEqual(list_of_pairs_to_dict_of_lists(input_params), await response.json())
                 response = await self.client.get(f'/resource/{i}/v2/{i**2}', params=input_params)
                 self.assertEqual(list_of_pairs_to_dict_of_lists(input_params), await response.json())
-                self.assertEqual(3, patched_create_handler.call_count)
+            self.assertEqual(3, patched_create_handler.call_count)
 
     @unittest_run_loop
     async def test_handler_with_dict_argument_are_properly_loaded(self):
@@ -193,3 +193,17 @@ class TestMiddleware(AioHTTPTestCase):
                                                    CONTENT_TYPE: 'application/json'},
                                           json={'teste': 1})
         self.assertEqual(HTTPStatus.UNPROCESSABLE_ENTITY, response.status)
+
+    @unittest_run_loop
+    async def test_it_ignores_properly_on_not_found_exception(self):
+        with patch.object(self.argantic, '_create_handler',
+                          side_effect=self.argantic._create_handler) as patched_create_handler:
+            response = await self.client.get('/not-found')
+            self.assertEqual(HTTPStatus.NOT_FOUND, response.status)
+            patched_create_handler.assert_not_called()
+
+    @unittest_run_loop
+    async def test_it_invalid_json_syntax_must_return_bad_request(self):
+        response = await self.client.post('/resource-pydantic-model', headers={CONTENT_TYPE: 'application/json'},
+                                         data='{"banan": "asa",}')
+        self.assertEqual(HTTPStatus.BAD_REQUEST, response.status)

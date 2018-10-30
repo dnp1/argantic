@@ -17,6 +17,10 @@ class ArganticUnsupportedContentType(ArganticClientError):
     pass
 
 
+class ArganticDecodeError(ArganticClientError):
+    pass
+
+
 class ArganticIncompatibleType(ArganticClientError):
     pass
 
