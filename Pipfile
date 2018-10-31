@@ -7,10 +7,14 @@ name = "pypi"
 aiohttp = ">=3,<4"
 pydantic = "==0.14"
 #put email validator as pydantic extra after pipenv bugfix
-email-validator = '1.0.3'
+email-validator = '==1.0.3'
 
 [dev-packages]
 coverage = "==4.5.1"
+pytest =  "==3.9.3"
+pytest-cov = "==2.6.0"
+mypy = "==0.641"
+flake8= "==3.6.0"
 
 [requires]
 python_version = "3.7"
