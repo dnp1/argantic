@@ -1,0 +1,36 @@
+language: python
+cache: pip
+matrix:
+  include:
+  - python: 3.6
+  - python: 3.7
+    dist: xenial
+    sudo: required
+  - python: 3.8-dev
+    dist: xenial
+    sudo: required
+  allow_failures:
+  - python: 3.8-dev
+install:
+- make install
+- pip freeze
+script:
+- make lint
+- make test && mv .coverage .coverage.extra
+- pip uninstall -y ujson email-validator
+- make test && mv .coverage .coverage.no-extra
+- coverage combine
+- make mypy
+- "./tests/check_tag.py"
+after_success:
+- ls -lha
+- python -c 'import sys; exit(sys.version_info >= (3, 8))' && bash <(curl -s https://codecov.io/bash)
+deploy:
+  - provider: pypi
+    user: dnp1
+    password:
+      secure: fjXAjPLuFAUdx0bxflvyOah+r2AqHBJS2+np/9u4Zw6/MdGTBWv1laWwq2PcSRYBPM4mDlBHC6Ct58Lbj3EIuLG0CLDRIIKrAoUnTiC8L655MTENya53ixy/G/IPCRM0h7HWdrLfCZMTaTpB4Gk2eS8+HJt6wYqjt9iOZUW81KAZ/decVK8GsPAvRITyr7hjbR3DUCR6HVZeMSByjk4MBF/mxISvWQ9lA86MDuKRSEcVtfUVkbGZwyOP3sRIPmk/5Hir498OKVNBVfojGgchvWJBDxVOBJUnP4P9wGuMqls+lkKdhnQweeX0Qq7JK2oM33pfuQO/M6EMrB1OA2uD2BySUKs7XJg13U9PHc8RKFh3sFIceT8bTqVlCvNxJmLiFD61W7aY/b9tfBpLA9YJbawJK7sW4aw4X1B1v+OWOtBxzYWMi6y0RkMJYVcJx4xA/bdG8n6exN//aqRMT/Xb0AA+jVwWbyg2JrS+/9nN8ACnpIln+NzvGjq8BSr2P9tKqD3On2JA7R+nw4SSU/cJxYyKHEvuotfka3qfpjbtS4o0Uz9iiON9HsUaMRmgndME/CRKQWr7mY7feF4k4/gUa5nh4laqBEYj/r3NK+UiCK/Q+CQlklVPiC5lpqCcKhnDYuz3WEVqdwcP2vCdfUk6BYujNTWG5I3M8ObIC9BP/cQ=
+    skip_upload_docs: true
+    on:
+      tags: true
+      python: 3.6

@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "11865e939df3b6db796576c97cd0378e88a1ce04ea5421517d3a39a250186533"
+            "sha256": "797a42d486ff784310e4dbbbacee7d4244c5d7e716f1738072ef076325b94441"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -43,6 +43,9 @@
             ],
             "index": "pypi",
             "version": "==3.4.4"
+        },
+        "argantic": {
+            "path": "."
         },
         "async-timeout": {
             "hashes": [
