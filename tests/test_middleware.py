@@ -3,12 +3,14 @@ from http import HTTPStatus
 from unittest.mock import patch
 
 from aiohttp import web
-from aiohttp.hdrs import CONTENT_TYPE, ACCEPT
+from aiohttp.hdrs import ACCEPT, CONTENT_TYPE
 from aiohttp.test_utils import AioHTTPTestCase, unittest_run_loop
 from argantic import Argantic
-from tests.aiohttp_handlers import post_handler, pure_handler, handler_with_pydantic_model, \
-    handler_with_pydantic_dataclass, post_handler_with_any_argument, post_handler_without_annotation_argument, \
-    post_handler_with_dict_typing_argument, post_handler_with_dict_argument
+
+from tests.aiohttp_handlers import (handler_with_pydantic_dataclass, handler_with_pydantic_model, post_handler,
+                                    post_handler_with_any_argument, post_handler_with_dict_argument,
+                                    post_handler_with_dict_typing_argument, post_handler_without_annotation_argument,
+                                    pure_handler)
 from tests.utils import list_of_pairs_to_dict_of_lists
 
 
@@ -165,7 +167,6 @@ class TestMiddleware(AioHTTPTestCase):
 
     @unittest_run_loop
     async def test_request_with_invalid_content_type(self):
-        input_data = {'seller_email': 'seller@sales.argantic', 'product_name': 'Cellphone', 'price': 'deafdasfdsa'}
         response = await self.client.post('/resource-dict-tp',
                                           headers={CONTENT_TYPE: 'application/toml'},
                                           data='dasfsafniuqwf')
@@ -205,5 +206,5 @@ class TestMiddleware(AioHTTPTestCase):
     @unittest_run_loop
     async def test_it_invalid_json_syntax_must_return_bad_request(self):
         response = await self.client.post('/resource-pydantic-model', headers={CONTENT_TYPE: 'application/json'},
-                                         data='{"banan": "asa",}')
+                                          data='{"banan": "asa",}')
         self.assertEqual(HTTPStatus.BAD_REQUEST, response.status)

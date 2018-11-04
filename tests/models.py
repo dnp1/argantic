@@ -1,6 +1,6 @@
 from typing import List
 
-from pydantic import BaseModel, EmailStr, Decimal
+from pydantic import BaseModel, Decimal, EmailStr
 from pydantic.dataclasses import dataclass
 
 

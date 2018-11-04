@@ -5,7 +5,7 @@ from typing import Any, Dict
 
 from aiohttp import web
 
-from tests.models import Model, DataCls
+from tests.models import DataCls, Model
 from tests.utils import multi_dict_to_dict_of_lists
 
 
