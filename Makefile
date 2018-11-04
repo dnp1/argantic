@@ -2,8 +2,8 @@
 
 .PHONY: install
 install:
-	pip install -U setuptools pip
-	pip install -U -r requirements.txt
+	pip install -U setuptools pip==18.1 pipenv==2018.10.9
+	pipenv sync
 	pip install -U .
 
 .PHONY: isort
