@@ -26,7 +26,7 @@ setup(
         'Programming Language :: Python',
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3 :: Only',
-        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
         'Intended Audience :: Developers',
         'Intended Audience :: Information Technology',
         'Intended Audience :: System Administrators',
@@ -42,7 +42,7 @@ setup(
     url='https://github.com/dnp1/argantic',
     license='Apache License 2.0',
     packages=['argantic'],
-    python_requires='>=3.6',
+    python_requires='>=3.7',
     zip_safe=True,
     install_requires=[
         'aiohttp>3,<4',
