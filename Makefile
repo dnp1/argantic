@@ -55,7 +55,7 @@ clean:
 	rm -f .coverage.*
 	rm -rf build
 	python setup.py clean
-	make -C docs clean
+#	make -C docs clean
 
 #.PHONY: docs
 #docs:
