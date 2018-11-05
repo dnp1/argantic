@@ -2,7 +2,7 @@ import inspect
 import json
 from dataclasses import is_dataclass
 from json import JSONDecodeError
-from typing import Dict, Callable, Awaitable, Optional, Tuple, Any, Iterator, Coroutine, Type, List, Hashable
+from typing import Dict, Callable, Awaitable, Optional, Tuple, Any, Iterator, Coroutine, Type, Hashable
 
 from aiohttp import web
 from aiohttp.hdrs import ACCEPT
@@ -67,7 +67,7 @@ class Argantic:
         if not parameters:
             return None
         elif len(parameters) > 1:
-            raise NotImplemented()
+            raise NotImplementedError()
 
         return parameters[0]
 
@@ -158,7 +158,7 @@ class Argantic:
 
         return n_handler
 
-    def _create_raw_response_body(self, request: web.Request, data) -> (str, str):
+    def _create_raw_response_body(self, request: web.Request, data) -> Tuple[str, str]:
         response_content_type = request.content_type or self.default_content_type
 
         accept_header: str = request.headers.get(ACCEPT)
